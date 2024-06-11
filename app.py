@@ -58,6 +58,8 @@ def negative_sharpe_ratio(weights, mean_returns, cov_matrix, risk_free_rate):
 
 # Main logic of the app
 if selected_tickers:
+    st.header("Modern Portfolio Theory")
+
     # Request data
     df = get_ticker_data(selected_tickers)
 
@@ -72,9 +74,9 @@ if selected_tickers:
     constraints = ({'type': 'eq', 'fun': lambda x: np.sum(x) - 1})
     bounds = tuple((0, 1) for asset in range(num_assets))
     initial_guess = np.array(num_assets * [1. / num_assets])    # Just make equal weights for it to optimize
-    optimal_weights = minimize(negative_sharpe_ratio, initial_guess, args=(mean_returns, cov_matrix, risk_free_rate), bounds=bounds, constraints=constraints)
+    optimal_sharpe_weights = minimize(negative_sharpe_ratio, initial_guess, args=(mean_returns, cov_matrix, risk_free_rate), bounds=bounds, constraints=constraints)
 
-    max_sharpe_ratio_return, max_sharpe_ratio_volatility, max_sharpe_ratio = calculate_portfolio_performance(optimal_weights.x, mean_returns, cov_matrix, risk_free_rate)
+    max_sharpe_ratio_return, max_sharpe_ratio_volatility, max_sharpe_ratio = calculate_portfolio_performance(optimal_sharpe_weights.x, mean_returns, cov_matrix, risk_free_rate)
 
     # Efficient frontier
     target_returns = np.linspace(mean_returns.min() * 365, mean_returns.max() * 365, 100)
@@ -88,7 +90,7 @@ if selected_tickers:
         efficient_portfolios.append((optimal_weights.x, portfolio_return, portfolio_volatility))
     
     # Plot randomly generated portfolios
-    random_weights = np.random.random((num_portfolios, num_assets)) ** 2  # Bias it slightly towards the extremes
+    random_weights = np.random.random((num_portfolios, num_assets)) ** 1.5  # Bias it slightly towards the extremes
     random_weights /= np.sum(random_weights, axis=1)[:, np.newaxis]
 
     portfolio_returns_random = np.dot(random_weights, mean_returns) * 365
@@ -123,7 +125,6 @@ if selected_tickers:
         name='Tickers'
     ))
     fig.update_layout(
-        title='Modern Portfolio Theory',
         xaxis_title='Standard deviation (of annual returns)',
         yaxis_title='Expected annual return',
         xaxis=dict(showgrid=True, tickformat=".2%"),
@@ -164,11 +165,11 @@ if selected_tickers:
         y=tangent_return,
         mode='lines',
         name='Tangent Line',
-        line=dict(color='purple', width=2, dash='dash')
+        line=dict(color='pink', width=2)#, dash='dash')
     ))
 
     fig.update_layout(
-        height=800,
+        height=750,
         legend=dict(
             yanchor="top",
             y=0.99,
@@ -179,8 +180,26 @@ if selected_tickers:
 
     st.plotly_chart(fig)
 
+    # Plot pie chart for optimal weights
+    st.header("Optimal Portfolio Weights")
+    col1, col2 = st.columns([1, 1])
+    
+    with col1:
+        optimal_weights_df = pd.DataFrame({
+            'Ticker': selected_tickers,
+            'Weight': [f"{weight*100:.2f}%" for weight in optimal_sharpe_weights.x]
+        }).sort_values(by='Weight', ascending=False).reset_index(drop=True)
+        st.table(optimal_weights_df)
+    
+    with col2:
+        fig_pie = go.Figure(data=[go.Pie(labels=selected_tickers, values=optimal_sharpe_weights.x)])
+        fig_pie.update_layout(height=350, margin=dict(t=0))
+        st.plotly_chart(fig_pie)
+
 
     # Plot historical performance
+    st.header("Historical Performance")
+
     fig = make_subplots(rows=len(selected_tickers), cols=1, shared_xaxes=True, vertical_spacing=0.02)
     for i, ticker in enumerate(selected_tickers):
         fig.add_trace(
@@ -188,8 +207,41 @@ if selected_tickers:
             row=i+1, col=1
         )
     fig.update_yaxes(type="log")
-    fig.update_layout(height=200 * len(selected_tickers), title_text="Historical Performance")
+    fig.update_layout(height=200 * len(selected_tickers))
+
     st.plotly_chart(fig)
+
+    # Display raw data and covariance matrix
+    st.header("Data")
+    col1, col2 = st.columns(2)
+    with col1:
+        st.subheader("Yahoo Finance Data")
+        st.dataframe(df)
+    with col2:
+        st.subheader("Covariance matrix")
+        st.dataframe(cov_matrix)
+    
+    # Math
+    st.header("Math")
+    st.write("The calculations required to find a portfolio's expected return and risk according to Modern Portfolio Theory")
+    st.latex(r'''
+        \mathbf{w} = \begin{bmatrix} x_1 \\ x_2 \\ \vdots \\ x_m \end{bmatrix} \quad
+        \mathbf{r} = \begin{bmatrix} r_1 \\ r_2 \\ \vdots \\ r_m \end{bmatrix} \quad
+        \mathbf{\Sigma}= \begin{bmatrix}
+        \sigma_{11} & \sigma_{12} & \cdots & \sigma_{1n} \\
+        \sigma_{21} & \sigma_{22} & \cdots & \sigma_{2n} \\
+        \vdots & \vdots & \ddots & \vdots \\
+        \sigma_{n1} & \sigma_{n2} & \cdots & \sigma_{nn}
+        \end{bmatrix}
+    ''')
+
+    st.latex(r'''
+        Expected\ return,\ E(R_p) = \mathbf{w^T}\mathbf{r}
+    ''')
+
+    st.latex(r'''
+        Portfolio\ return\ volatility,\ \sigma_p = \sqrt{\sigma_p^2} = \sqrt{\mathbf{w^T\Sigma w}}
+    ''')
 else:
     st.warning("Please select at least one ticker.")
 
